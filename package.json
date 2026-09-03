@@ -1,8 +1,8 @@
 {
   "name": "codex-auto-approve",
-  "displayName": "Codex Auto Approve",
-  "description": "Automatically selects User approach and approves Codex prompts in VS Code on Windows.",
-  "version": "0.2.5",
+  "displayName": "Auto Approve (Codex & Copilot)",
+  "description": "Automatically approves matching Codex and GitHub Copilot prompts in VS Code on Windows.",
+  "version": "0.3.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -13,6 +13,7 @@
   ],
   "keywords": [
     "codex",
+    "copilot",
     "approval",
     "automation"
   ],
@@ -28,6 +29,7 @@
     "dist/**",
     "scripts/**",
     "README.md",
+    "README-tw.md",
     "LICENSE"
   ],
   "contributes": {
@@ -35,31 +37,41 @@
       {
         "command": "codexAutoApprove.enable",
         "title": "Enable",
-        "category": "Codex Auto Approve"
+        "category": "Auto Approve"
       },
       {
         "command": "codexAutoApprove.disable",
         "title": "Disable",
-        "category": "Codex Auto Approve"
+        "category": "Auto Approve"
       },
       {
         "command": "codexAutoApprove.toggle",
         "title": "Toggle",
-        "category": "Codex Auto Approve"
+        "category": "Auto Approve"
       },
       {
         "command": "codexAutoApprove.showLogs",
         "title": "Show Logs",
-        "category": "Codex Auto Approve"
+        "category": "Auto Approve"
       }
     ],
     "configuration": {
-      "title": "Codex Auto Approve",
+      "title": "Auto Approve (Codex & Copilot)",
       "properties": {
         "codexAutoApprove.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Start the local approval bridge automatically. Enabling this accepts matching Codex prompts without asking again."
+          "description": "Master switch for the local approval bridge. When on, enabled providers approve matching prompts automatically."
+        },
+        "codexAutoApprove.codex.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Approve matching OpenAI Codex prompts when the master switch is on."
+        },
+        "codexAutoApprove.copilot.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Approve matching GitHub Copilot Chat/Agent and terminal prompts when the master switch is on."
         },
         "codexAutoApprove.pollInterval": {
           "type": "number",
@@ -67,7 +79,7 @@
           "minimum": 50,
           "maximum": 5000,
           "description": "Legacy setting retained for compatibility; event-driven versions no longer poll at this interval.",
-          "markdownDeprecationMessage": "No longer used. Codex Auto Approve is event-driven starting with version 0.2.0."
+          "markdownDeprecationMessage": "No longer used. Auto Approve is event-driven starting with version 0.2.0."
         },
         "codexAutoApprove.eventDebounce": {
           "type": "number",
@@ -86,7 +98,12 @@
         "codexAutoApprove.onlyWhenCodexVisible": {
           "type": "boolean",
           "default": true,
-          "description": "Require a visible Codex accessibility marker before approving. Keep this enabled to reduce false matches."
+          "description": "Require a visible Codex accessibility marker before approving Codex prompts."
+        },
+        "codexAutoApprove.copilot.onlyWhenVisible": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require a visible Copilot accessibility marker before approving Copilot prompts."
         },
         "codexAutoApprove.hostProcessNames": {
           "type": "array",
@@ -98,19 +115,37 @@
           "type": "array",
           "items": { "type": "string" },
           "default": ["User approach", "Use user approach", "使用者方案", "使用者方法", "使用者做法", "用户方案", "用户方法", "用户做法"],
-          "description": "Exact accessible labels that select the preferred approach before approval."
+          "description": "Codex: exact accessible labels that select the preferred approach before approval."
         },
         "codexAutoApprove.approvalLabels": {
           "type": "array",
           "items": { "type": "string" },
           "default": ["Allow once", "Allow", "Approve", "Agree", "Confirm", "Yes, proceed", "Use this approach", "允許一次", "允許", "核准", "同意", "確認", "是，繼續", "使用此方案", "使用這個方案", "允许一次", "允许", "批准", "同意", "确认", "是，继续", "使用此方案", "使用这个方案"],
-          "description": "Exact accessible button labels that may be invoked inside a Codex context."
+          "description": "Codex: exact accessible button labels that may be invoked inside a Codex context."
         },
         "codexAutoApprove.codexMarkers": {
           "type": "array",
           "items": { "type": "string" },
           "default": ["Codex", "OpenAI Codex"],
           "description": "Case-insensitive text fragments used to identify the Codex UI context."
+        },
+        "codexAutoApprove.copilot.approvalLabels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Allow", "Allow in this session", "Continue", "Confirm", "Accept", "Approve", "允許", "允許在此工作階段", "允許在此工作階段中", "繼續", "確認", "接受", "核准", "允许", "允许在此会话", "允许在此会话中", "继续", "确认", "接受", "批准"],
+          "description": "Copilot: exact accessible labels for Chat/Agent tool approvals."
+        },
+        "codexAutoApprove.copilot.terminalLabels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Run", "Run command", "Run in terminal", "執行", "執行命令", "在終端機中執行", "运行", "运行命令", "在终端中运行"],
+          "description": "Copilot: exact accessible labels for terminal command execution approvals. Merged with copilot.approvalLabels."
+        },
+        "codexAutoApprove.copilot.markers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Copilot", "GitHub Copilot", "Copilot Chat"],
+          "description": "Case-insensitive text fragments used to identify the Copilot UI context."
         },
         "codexAutoApprove.cooldown": {
           "type": "number",
@@ -128,7 +163,7 @@
     "watch": "tsc -watch -p .",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "vscode:prepublish": "npm run clean && npm run compile",
-    "package": "npx --yes @vscode/vsce package"
+    "package": "npx --yes @vscode/vsce package --baseContentUrl https://github.com/local/codex-auto/blob/HEAD --baseImagesUrl https://github.com/local/codex-auto/raw/HEAD"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

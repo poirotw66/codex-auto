@@ -13,7 +13,9 @@ interface BridgeEvent {
   type?: string;
   message?: string;
   label?: string;
+  provider?: string;
   pid?: number;
+  providers?: string[];
 }
 
 export class ApprovalBridge {
@@ -171,12 +173,16 @@ export class ApprovalBridge {
     try {
       const event = JSON.parse(line) as BridgeEvent;
       const timestamp = new Date().toLocaleTimeString();
+      const provider = event.provider ? ` [${event.provider}]` : '';
       if (event.type === 'approved') {
-        this.output.appendLine(`${timestamp} Approved: ${event.label ?? 'unknown control'}`);
+        this.output.appendLine(`${timestamp} Approved${provider}: ${event.label ?? 'unknown control'}`);
       } else if (event.type === 'selected') {
-        this.output.appendLine(`${timestamp} Selected: ${event.label ?? 'User approach'}`);
+        this.output.appendLine(`${timestamp} Selected${provider}: ${event.label ?? 'User approach'}`);
       } else if (event.type === 'ready') {
-        this.output.appendLine(`[bridge] Ready (PID ${event.pid ?? '?'})`);
+        const providers = Array.isArray(event.providers) && event.providers.length > 0
+          ? event.providers.join('+')
+          : 'none';
+        this.output.appendLine(`[bridge] Ready (PID ${event.pid ?? '?'}, providers=${providers})`);
       } else {
         this.output.appendLine(`[bridge] ${event.message ?? line}`);
       }

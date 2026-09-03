@@ -315,35 +315,45 @@ if ($hostProcessNames.Count -eq 0) {
     foreach ($name in $defaultHostProcessNames) { [void]$hostProcessNames.Add($name) }
 }
 
-$approachLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($labelValue in @($config.approachLabels)) {
-    $label = ([string]$labelValue).Trim()
-    if ($label) { [void]$approachLabels.Add($label) }
+function New-LabelSet([object]$Values) {
+    $set = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($value in @($Values)) {
+        $label = ([string]$value).Trim()
+        if ($label) { [void]$set.Add($label) }
+    }
+    return $set
 }
-$approvalLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($labelValue in @($config.approvalLabels)) {
-    $label = ([string]$labelValue).Trim()
-    if ($label) { [void]$approvalLabels.Add($label) }
-}
-$highConfidenceLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($labelValue in @($config.highConfidenceLabels)) {
-    $label = ([string]$labelValue).Trim()
-    if ($label) { [void]$highConfidenceLabels.Add($label) }
+
+$providerStates = [Collections.Generic.List[object]]::new()
+foreach ($providerConfig in @($config.providers)) {
+    if (-not $providerConfig) { continue }
+    $providerId = [string]$providerConfig.id
+    if (-not $providerId) { continue }
+    $providerStates.Add([pscustomobject]@{
+        Id = $providerId
+        RequireContext = [bool]$providerConfig.requireContext
+        Approach = (New-LabelSet $providerConfig.approachLabels)
+        Approval = (New-LabelSet $providerConfig.approvalLabels)
+        HighConfidence = (New-LabelSet $providerConfig.highConfidenceLabels)
+        Markers = @(@($providerConfig.markers) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    })
 }
 
 $uniqueLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $nameConditions = [Collections.Generic.List[Windows.Automation.Condition]]::new()
-foreach ($label in @($approachLabels) + @($approvalLabels)) {
-    if ($uniqueLabels.Add($label)) {
-        $nameConditions.Add([Windows.Automation.PropertyCondition]::new(
-            [Windows.Automation.AutomationElement]::NameProperty,
-            $label,
-            [Windows.Automation.PropertyConditionFlags]::IgnoreCase
-        ))
+foreach ($provider in $providerStates) {
+    foreach ($label in @($provider.Approach) + @($provider.Approval)) {
+        if ($uniqueLabels.Add($label)) {
+            $nameConditions.Add([Windows.Automation.PropertyCondition]::new(
+                [Windows.Automation.AutomationElement]::NameProperty,
+                $label,
+                [Windows.Automation.PropertyConditionFlags]::IgnoreCase
+            ))
+        }
     }
 }
 if ($nameConditions.Count -eq 0) {
-    throw 'No approach or approval labels configured.'
+    throw 'No approach or approval labels configured for enabled providers.'
 }
 $targetNameCondition = if ($nameConditions.Count -eq 1) {
     $nameConditions[0]
@@ -396,21 +406,19 @@ function Get-Identity([Windows.Automation.AutomationElement]$Element) {
     try { return "$($Element.Current.ProcessId):$($Element.Current.AutomationId):$($Element.Current.Name)" } catch { return [guid]::NewGuid().ToString() }
 }
 
-function Test-CodexContext([Windows.Automation.AutomationElement]$Element) {
-    if (-not $config.onlyWhenCodexVisible) { return $true }
+function Test-ProviderContext([Windows.Automation.AutomationElement]$Element, [object]$Provider) {
+    if (-not $Provider.RequireContext) { return $true }
 
-    # Distinctive approval labels are safe enough when they are enabled and
-    # visible inside a supported host process. Avoid another Chromium tree traversal.
     try {
         $candidateName = [string]$Element.Current.Name
-        if ($highConfidenceLabels.Contains($candidateName)) { return $true }
+        if ($Provider.HighConfidence.Contains($candidateName)) { return $true }
     } catch {}
 
     $cursor = $Element
     for ($depth = 0; $depth -lt 12 -and $null -ne $cursor; $depth++) {
         try {
             $haystack = "$($cursor.Current.Name) $($cursor.Current.AutomationId) $($cursor.Current.ClassName)"
-            foreach ($marker in $config.codexMarkers) {
+            foreach ($marker in $Provider.Markers) {
                 if ($haystack.IndexOf([string]$marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
             }
             $cursor = $treeWalker.GetParent($cursor)
@@ -420,7 +428,7 @@ function Test-CodexContext([Windows.Automation.AutomationElement]$Element) {
     return $false
 }
 
-function Invoke-Control([Windows.Automation.AutomationElement]$Element, [string]$Kind) {
+function Invoke-Control([Windows.Automation.AutomationElement]$Element, [string]$Kind, [string]$ProviderId) {
     $originalLabel = [string]$Element.Current.Name
     $target = $Element
     for ($depth = 0; $depth -lt 5 -and $null -ne $target; $depth++) {
@@ -440,28 +448,32 @@ function Invoke-Control([Windows.Automation.AutomationElement]$Element, [string]
                 continue
             }
             $lastInvoked[$identity] = $now
-            Write-Event @{ type = $Kind; label = $originalLabel }
+            Write-Event @{ type = $Kind; label = $originalLabel; provider = $ProviderId }
             return $true
         } catch {
-            Write-ThrottledWarning "invoke:$originalLabel" "Could not invoke '$originalLabel': $($_.Exception.Message)"
+            Write-ThrottledWarning "invoke:$ProviderId:$originalLabel" "Could not invoke '$originalLabel' ($ProviderId): $($_.Exception.Message)"
             return $false
         }
     }
-    Write-ThrottledWarning "pattern:$originalLabel" "Matched '$originalLabel', but neither it nor its nearby parents exposed a clickable UI Automation pattern."
+    Write-ThrottledWarning "pattern:$ProviderId:$originalLabel" "Matched '$originalLabel' ($ProviderId), but neither it nor its nearby parents exposed a clickable UI Automation pattern."
     return $false
 }
 
 function Find-MatchingControls([Windows.Automation.AutomationElement]$Root) {
-    $approach = [Collections.Generic.List[Windows.Automation.AutomationElement]]::new()
-    $approval = [Collections.Generic.List[Windows.Automation.AutomationElement]]::new()
+    $approach = [Collections.Generic.List[hashtable]]::new()
+    $approval = [Collections.Generic.List[hashtable]]::new()
     $all = $Root.FindAll([Windows.Automation.TreeScope]::Descendants, $matchCondition)
     foreach ($item in $all) {
         $name = [string]$item.Current.Name
         if (-not $name) { continue }
-        if ($approachLabels.Contains($name) -and $item.Current.ControlType -ne [Windows.Automation.ControlType]::Text) {
-            $approach.Add($item)
+        foreach ($provider in $providerStates) {
+            if ($provider.Approach.Contains($name) -and $item.Current.ControlType -ne [Windows.Automation.ControlType]::Text) {
+                $approach.Add(@{ Element = $item; Provider = $provider })
+            }
+            if ($provider.Approval.Contains($name)) {
+                $approval.Add(@{ Element = $item; Provider = $provider })
+            }
         }
-        if ($approvalLabels.Contains($name)) { $approval.Add($item) }
     }
     return @{ approach = $approach; approval = $approval }
 }
@@ -491,18 +503,22 @@ function Invoke-Scan {
             if (-not $processName -or -not $hostProcessNames.Contains($processName)) { continue }
 
             $controls = Find-MatchingControls $window
-            foreach ($control in $controls.approach) {
-                if (Test-CodexContext $control) {
-                    if (Invoke-Control $control 'selected') { break }
+            foreach ($match in $controls.approach) {
+                $control = $match.Element
+                $provider = $match.Provider
+                if (Test-ProviderContext $control $provider) {
+                    if (Invoke-Control $control 'selected' $provider.Id) { break }
                 } else {
-                    Write-ThrottledWarning "context:$($control.Current.Name)" "Matched '$($control.Current.Name)', but rejected it because no nearby Codex context was exposed."
+                    Write-ThrottledWarning "context:$($provider.Id):$($control.Current.Name)" "Matched '$($control.Current.Name)' for $($provider.Id), but rejected it because no nearby provider context was exposed."
                 }
             }
-            foreach ($control in $controls.approval) {
-                if (Test-CodexContext $control) {
-                    if (Invoke-Control $control 'approved') { break }
+            foreach ($match in $controls.approval) {
+                $control = $match.Element
+                $provider = $match.Provider
+                if (Test-ProviderContext $control $provider) {
+                    if (Invoke-Control $control 'approved' $provider.Id) { break }
                 } else {
-                    Write-ThrottledWarning "context:$($control.Current.Name)" "Matched '$($control.Current.Name)', but rejected it because no nearby Codex context was exposed."
+                    Write-ThrottledWarning "context:$($provider.Id):$($control.Current.Name)" "Matched '$($control.Current.Name)' for $($provider.Id), but rejected it because no nearby provider context was exposed."
                 }
             }
         }
@@ -531,6 +547,7 @@ Write-Event @{
     mode = 'event-driven'
     idleScanInterval = $idleScanInterval
     hostProcessCount = $hostProcessNames.Count
+    providers = @($providerStates | ForEach-Object { $_.Id })
 }
 
 try {
