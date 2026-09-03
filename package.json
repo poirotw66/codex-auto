@@ -1,0 +1,125 @@
+{
+  "name": "codex-auto-approve",
+  "displayName": "Codex Auto Approve",
+  "description": "Automatically selects User approach and approves Codex prompts in VS Code on Windows.",
+  "version": "0.2.4",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "codex",
+    "approval",
+    "automation"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:codexAutoApprove.enable",
+    "onCommand:codexAutoApprove.disable",
+    "onCommand:codexAutoApprove.toggle",
+    "onCommand:codexAutoApprove.showLogs"
+  ],
+  "main": "./dist/extension.js",
+  "files": [
+    "dist/**",
+    "scripts/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexAutoApprove.enable",
+        "title": "Enable",
+        "category": "Codex Auto Approve"
+      },
+      {
+        "command": "codexAutoApprove.disable",
+        "title": "Disable",
+        "category": "Codex Auto Approve"
+      },
+      {
+        "command": "codexAutoApprove.toggle",
+        "title": "Toggle",
+        "category": "Codex Auto Approve"
+      },
+      {
+        "command": "codexAutoApprove.showLogs",
+        "title": "Show Logs",
+        "category": "Codex Auto Approve"
+      }
+    ],
+    "configuration": {
+      "title": "Codex Auto Approve",
+      "properties": {
+        "codexAutoApprove.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the local approval bridge automatically. Enabling this accepts matching Codex prompts without asking again."
+        },
+        "codexAutoApprove.pollInterval": {
+          "type": "number",
+          "default": 50,
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "Legacy setting retained for compatibility; event-driven versions no longer poll at this interval.",
+          "markdownDeprecationMessage": "No longer used. Codex Auto Approve is event-driven starting with version 0.2.0."
+        },
+        "codexAutoApprove.eventDebounce": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 200,
+          "description": "Milliseconds used to combine bursts of Windows accessibility events before scanning."
+        },
+        "codexAutoApprove.onlyWhenCodexVisible": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require a visible Codex accessibility marker before approving. Keep this enabled to reduce false matches."
+        },
+        "codexAutoApprove.approachLabels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["User approach", "Use user approach", "使用者方案", "使用者方法", "使用者做法", "用户方案", "用户方法", "用户做法"],
+          "description": "Exact accessible labels that select the preferred approach before approval."
+        },
+        "codexAutoApprove.approvalLabels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Allow once", "Allow", "Approve", "Agree", "Confirm", "Yes, proceed", "Use this approach", "允許一次", "允許", "核准", "同意", "確認", "是，繼續", "使用此方案", "使用這個方案", "允许一次", "允许", "批准", "同意", "确认", "是，继续", "使用此方案", "使用这个方案"],
+          "description": "Exact accessible button labels that may be invoked inside a Codex context."
+        },
+        "codexAutoApprove.codexMarkers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Codex", "OpenAI Codex"],
+          "description": "Case-insensitive text fragments used to identify the Codex UI context."
+        },
+        "codexAutoApprove.cooldown": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 250,
+          "maximum": 30000,
+          "description": "Milliseconds before the same accessibility element may be triggered again."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "npm run compile && node --test dist/test/*.test.js",
+    "vscode:prepublish": "npm run clean && npm run compile",
+    "package": "npx --yes @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.7.2"
+  }
+}
