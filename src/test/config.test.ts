@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { WorkspaceConfiguration } from 'vscode';
-import { readBridgeConfig } from '../config';
+import { DEFAULT_HOST_PROCESS_NAMES, readBridgeConfig } from '../config';
 
 function fakeConfig(values: Record<string, unknown>): WorkspaceConfiguration {
   return {
@@ -15,18 +15,30 @@ function fakeConfig(values: Record<string, unknown>): WorkspaceConfiguration {
 test('normalizes bridge configuration', () => {
   const result = readBridgeConfig(fakeConfig({
     eventDebounce: 500,
+    idleScanInterval: 50,
     cooldown: 90000,
     approachLabels: [' User approach ', '', 'User approach'],
     approvalLabels: [],
+    hostProcessNames: [' Cursor ', 'Code'],
     codexMarkers: [' Codex ']
-  }));
+  }), 4242);
 
   assert.equal(result.eventDebounce, 200);
+  assert.equal(result.idleScanInterval, 250);
   assert.equal(result.cooldown, 30000);
+  assert.equal(result.parentPid, 4242);
   assert.deepEqual(result.approachLabels, ['User approach']);
+  assert.deepEqual(result.hostProcessNames, ['Cursor', 'Code']);
   assert.ok(result.approvalLabels.includes('Allow once'));
   assert.ok(result.approvalLabels.includes('允許一次'));
   assert.ok(result.approvalLabels.includes('允许一次'));
   assert.ok(result.highConfidenceLabels.includes('允許一次'));
   assert.deepEqual(result.codexMarkers, ['Codex']);
+});
+
+test('uses default host process names when unset', () => {
+  const result = readBridgeConfig(fakeConfig({}));
+  assert.deepEqual(result.hostProcessNames, [...DEFAULT_HOST_PROCESS_NAMES]);
+  assert.equal(result.idleScanInterval, 1000);
+  assert.equal(result.parentPid, process.pid);
 });

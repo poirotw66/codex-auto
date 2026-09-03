@@ -2,7 +2,7 @@
   "name": "codex-auto-approve",
   "displayName": "Codex Auto Approve",
   "description": "Automatically selects User approach and approves Codex prompts in VS Code on Windows.",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -76,10 +76,23 @@
           "maximum": 200,
           "description": "Milliseconds used to combine bursts of Windows accessibility events before scanning."
         },
+        "codexAutoApprove.idleScanInterval": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "maximum": 5000,
+          "description": "Milliseconds between low-frequency safety scans when no accessibility events arrive."
+        },
         "codexAutoApprove.onlyWhenCodexVisible": {
           "type": "boolean",
           "default": true,
           "description": "Require a visible Codex accessibility marker before approving. Keep this enabled to reduce false matches."
+        },
+        "codexAutoApprove.hostProcessNames": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Code", "Code - Insiders", "VSCodium", "Cursor", "Cursor Helper", "Windsurf", "code-oss"],
+          "description": "Host process names whose windows may be scanned and whose accessibility events may wake the bridge."
         },
         "codexAutoApprove.approachLabels": {
           "type": "array",

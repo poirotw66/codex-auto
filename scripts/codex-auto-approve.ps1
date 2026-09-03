@@ -12,6 +12,8 @@ Add-Type -AssemblyName UIAutomationTypes
 
 $eventBridgeSource = @'
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -58,6 +60,9 @@ public static class CodexUiSignal
     private static readonly Timer DebounceTimer = new Timer(OnTimer, null, Timeout.Infinite, Timeout.Infinite);
     private static readonly WinEventDelegate Callback = OnWinEvent;
     private static readonly ManualResetEvent HookReady = new ManualResetEvent(false);
+    private static readonly ConcurrentDictionary<uint, string> ProcessNameCache =
+        new ConcurrentDictionary<uint, string>();
+    private static HashSet<string> allowedProcessNames = DefaultProcessNames();
     private static IntPtr eventHook = IntPtr.Zero;
     private static Thread hookThread;
     private static uint hookThreadId;
@@ -65,6 +70,21 @@ public static class CodexUiSignal
     private static int debounceMilliseconds = 10;
     private static int pending;
     private static int started;
+    private static int lastCacheClearTicks = Environment.TickCount;
+
+    private static HashSet<string> DefaultProcessNames()
+    {
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Code",
+            "Code - Insiders",
+            "VSCodium",
+            "Cursor",
+            "Cursor Helper",
+            "Windsurf",
+            "code-oss"
+        };
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWinEventHook(
@@ -100,6 +120,13 @@ public static class CodexUiSignal
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostThreadMessage(uint threadId, uint message, UIntPtr wParam, IntPtr lParam);
+
+    public static void SetProcessNames(string[] names)
+    {
+        if (names == null || names.Length == 0) return;
+        allowedProcessNames = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+        ProcessNameCache.Clear();
+    }
 
     public static void Start(int debounce)
     {
@@ -142,6 +169,7 @@ public static class CodexUiSignal
         hookThreadId = 0;
         DebounceTimer.Change(Timeout.Infinite, Timeout.Infinite);
         Interlocked.Exchange(ref pending, 0);
+        ProcessNameCache.Clear();
     }
 
     private static void HookThreadMain()
@@ -170,6 +198,35 @@ public static class CodexUiSignal
         eventHook = IntPtr.Zero;
     }
 
+    private static void MaybeClearProcessNameCache()
+    {
+        int now = Environment.TickCount;
+        if (unchecked(now - lastCacheClearTicks) < 60000) return;
+        lastCacheClearTicks = now;
+        ProcessNameCache.Clear();
+    }
+
+    private static bool IsAllowedHostProcess(uint processId)
+    {
+        MaybeClearProcessNameCache();
+
+        string processName;
+        if (!ProcessNameCache.TryGetValue(processId, out processName))
+        {
+            try
+            {
+                processName = Process.GetProcessById((int)processId).ProcessName;
+            }
+            catch
+            {
+                return false;
+            }
+            ProcessNameCache[processId] = processName;
+        }
+
+        return allowedProcessNames.Contains(processName);
+    }
+
     private static void OnWinEvent(
         IntPtr hook,
         uint eventType,
@@ -184,14 +241,7 @@ public static class CodexUiSignal
         uint processId;
         GetWindowThreadProcessId(window, out processId);
         if (processId == 0) return;
-        try
-        {
-            string processName = Process.GetProcessById((int)processId).ProcessName;
-            if (!processName.Equals("Code", StringComparison.OrdinalIgnoreCase) &&
-                !processName.Equals("Code - Insiders", StringComparison.OrdinalIgnoreCase) &&
-                !processName.Equals("VSCodium", StringComparison.OrdinalIgnoreCase)) return;
-        }
-        catch { return; }
+        if (!IsAllowedHostProcess(processId)) return;
         QueueSignal();
     }
 
@@ -210,7 +260,34 @@ public static class CodexUiSignal
 }
 '@
 
-Add-Type -TypeDefinition $eventBridgeSource
+function Initialize-CodexUiSignal {
+    if ('CodexUiSignal' -as [type]) { return }
+
+    $assemblyPath = $env:CODEX_AUTO_APPROVE_ASSEMBLY
+    if ($assemblyPath -and (Test-Path -LiteralPath $assemblyPath)) {
+        Add-Type -Path $assemblyPath
+        return
+    }
+
+    if ($assemblyPath) {
+        $assemblyDir = Split-Path -Parent $assemblyPath
+        if ($assemblyDir -and -not (Test-Path -LiteralPath $assemblyDir)) {
+            New-Item -ItemType Directory -Path $assemblyDir -Force | Out-Null
+        }
+        try {
+            # OutputAssembly writes the DLL but does not load it; load it explicitly.
+            Add-Type -TypeDefinition $eventBridgeSource -OutputAssembly $assemblyPath -OutputType Library
+            Add-Type -Path $assemblyPath
+            return
+        } catch {
+            # Fall through to in-memory compile when the cache path is not writable.
+        }
+    }
+
+    Add-Type -TypeDefinition $eventBridgeSource
+}
+
+Initialize-CodexUiSignal
 
 $configJson = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ConfigBase64))
 $config = $configJson | ConvertFrom-Json
@@ -218,11 +295,46 @@ $desktop = [Windows.Automation.AutomationElement]::RootElement
 $treeWalker = [Windows.Automation.TreeWalker]::ControlViewWalker
 $lastInvoked = @{}
 $lastWarnings = @{}
+$processNameByPid = @{}
+
+$defaultHostProcessNames = @(
+    'Code',
+    'Code - Insiders',
+    'VSCodium',
+    'Cursor',
+    'Cursor Helper',
+    'Windsurf',
+    'code-oss'
+)
+$hostProcessNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($name in @($config.hostProcessNames)) {
+    $trimmed = ([string]$name).Trim()
+    if ($trimmed) { [void]$hostProcessNames.Add($trimmed) }
+}
+if ($hostProcessNames.Count -eq 0) {
+    foreach ($name in $defaultHostProcessNames) { [void]$hostProcessNames.Add($name) }
+}
+
+$approachLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($labelValue in @($config.approachLabels)) {
+    $label = ([string]$labelValue).Trim()
+    if ($label) { [void]$approachLabels.Add($label) }
+}
+$approvalLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($labelValue in @($config.approvalLabels)) {
+    $label = ([string]$labelValue).Trim()
+    if ($label) { [void]$approvalLabels.Add($label) }
+}
+$highConfidenceLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($labelValue in @($config.highConfidenceLabels)) {
+    $label = ([string]$labelValue).Trim()
+    if ($label) { [void]$highConfidenceLabels.Add($label) }
+}
+
 $uniqueLabels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $nameConditions = [Collections.Generic.List[Windows.Automation.Condition]]::new()
-foreach ($labelValue in @($config.approachLabels) + @($config.approvalLabels)) {
-    $label = [string]$labelValue
-    if ($label -and $uniqueLabels.Add($label)) {
+foreach ($label in @($approachLabels) + @($approvalLabels)) {
+    if ($uniqueLabels.Add($label)) {
         $nameConditions.Add([Windows.Automation.PropertyCondition]::new(
             [Windows.Automation.AutomationElement]::NameProperty,
             $label,
@@ -230,10 +342,27 @@ foreach ($labelValue in @($config.approachLabels) + @($config.approvalLabels)) {
         ))
     }
 }
+if ($nameConditions.Count -eq 0) {
+    throw 'No approach or approval labels configured.'
+}
 $targetNameCondition = if ($nameConditions.Count -eq 1) {
     $nameConditions[0]
 } else {
     [Windows.Automation.OrCondition]::new($nameConditions.ToArray())
+}
+$matchCondition = [Windows.Automation.AndCondition]::new(
+    $targetNameCondition,
+    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsEnabledProperty, $true),
+    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsOffscreenProperty, $false)
+)
+
+$idleScanInterval = 1000
+if ($null -ne $config.idleScanInterval) {
+    $idleScanInterval = [Math]::Max(250, [Math]::Min(5000, [int]$config.idleScanInterval))
+}
+$parentPid = 0
+if ($null -ne $config.parentPid) {
+    $parentPid = [int]$config.parentPid
 }
 
 function Write-Event([hashtable]$Event) {
@@ -249,6 +378,16 @@ function Write-ThrottledWarning([string]$Key, [string]$Message) {
     }
 }
 
+function Test-ParentAlive {
+    if ($parentPid -le 0) { return $true }
+    try {
+        $parent = Get-Process -Id $parentPid -ErrorAction Stop
+        return -not $parent.HasExited
+    } catch {
+        return $false
+    }
+}
+
 function Get-Identity([Windows.Automation.AutomationElement]$Element) {
     try {
         $runtimeId = $Element.GetRuntimeId()
@@ -261,10 +400,10 @@ function Test-CodexContext([Windows.Automation.AutomationElement]$Element) {
     if (-not $config.onlyWhenCodexVisible) { return $true }
 
     # Distinctive approval labels are safe enough when they are enabled and
-    # visible inside a VS Code process. Avoid another Chromium tree traversal.
+    # visible inside a supported host process. Avoid another Chromium tree traversal.
     try {
         $candidateName = [string]$Element.Current.Name
-        if ($candidateName -in $config.highConfidenceLabels) { return $true }
+        if ($highConfidenceLabels.Contains($candidateName)) { return $true }
     } catch {}
 
     $cursor = $Element
@@ -315,17 +454,30 @@ function Invoke-Control([Windows.Automation.AutomationElement]$Element, [string]
 function Find-MatchingControls([Windows.Automation.AutomationElement]$Root) {
     $approach = [Collections.Generic.List[Windows.Automation.AutomationElement]]::new()
     $approval = [Collections.Generic.List[Windows.Automation.AutomationElement]]::new()
-    $all = $Root.FindAll([Windows.Automation.TreeScope]::Descendants, $targetNameCondition)
+    $all = $Root.FindAll([Windows.Automation.TreeScope]::Descendants, $matchCondition)
     foreach ($item in $all) {
-        if (-not $item.Current.IsEnabled -or $item.Current.IsOffscreen) { continue }
         $name = [string]$item.Current.Name
         if (-not $name) { continue }
-        if (($name -in $config.approachLabels) -and $item.Current.ControlType -ne [Windows.Automation.ControlType]::Text) {
+        if ($approachLabels.Contains($name) -and $item.Current.ControlType -ne [Windows.Automation.ControlType]::Text) {
             $approach.Add($item)
         }
-        if ($name -in $config.approvalLabels) { $approval.Add($item) }
+        if ($approvalLabels.Contains($name)) { $approval.Add($item) }
     }
     return @{ approach = $approach; approval = $approval }
+}
+
+function Get-WindowProcessName([Windows.Automation.AutomationElement]$Window) {
+    $processId = 0
+    try { $processId = [int]$Window.Current.ProcessId } catch { return $null }
+    if ($processId -le 0) { return $null }
+    if ($processNameByPid.ContainsKey($processId)) { return [string]$processNameByPid[$processId] }
+    try {
+        $processName = (Get-Process -Id $processId -ErrorAction Stop).ProcessName
+        $processNameByPid[$processId] = $processName
+        return $processName
+    } catch {
+        return $null
+    }
 }
 
 function Invoke-Scan {
@@ -335,9 +487,8 @@ function Invoke-Scan {
             [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
         )
         foreach ($window in $windows) {
-            $processName = ''
-            try { $processName = (Get-Process -Id $window.Current.ProcessId -ErrorAction Stop).ProcessName } catch { continue }
-            if ($processName -notin @('Code', 'Code - Insiders', 'VSCodium')) { continue }
+            $processName = Get-WindowProcessName $window
+            if (-not $processName -or -not $hostProcessNames.Contains($processName)) { continue }
 
             $controls = Find-MatchingControls $window
             foreach ($control in $controls.approach) {
@@ -360,22 +511,37 @@ function Invoke-Scan {
         foreach ($key in @($lastInvoked.Keys)) {
             if ([long]$lastInvoked[$key] -lt $cutoff) { $lastInvoked.Remove($key) }
         }
+        foreach ($key in @($processNameByPid.Keys)) {
+            try {
+                $null = Get-Process -Id $key -ErrorAction Stop
+            } catch {
+                $processNameByPid.Remove($key)
+            }
+        }
     } catch {
         Write-Event @{ type = 'warning'; message = $_.Exception.Message }
     }
 }
 
+[CodexUiSignal]::SetProcessNames(@($hostProcessNames))
 [CodexUiSignal]::Start([int]$config.eventDebounce)
-Write-Event @{ type = 'ready'; pid = $PID; mode = 'event-driven' }
+Write-Event @{
+    type = 'ready'
+    pid = $PID
+    mode = 'event-driven'
+    idleScanInterval = $idleScanInterval
+    hostProcessCount = $hostProcessNames.Count
+}
 
 try {
     while ($true) {
+        if (-not (Test-ParentAlive)) { break }
+
         Invoke-Scan
 
-        # Windows accessibility events wake this immediately. The timeout is a
-        # low-frequency safety scan for Chromium builds that occasionally drop
-        # accessibility events.
-        [void][CodexUiSignal]::Wait(250)
+        # Accessibility events wake this immediately. The timeout is a
+        # low-frequency safety scan for Chromium builds that occasionally drop events.
+        [void][CodexUiSignal]::Wait($idleScanInterval)
     }
 } finally {
     [CodexUiSignal]::Stop()

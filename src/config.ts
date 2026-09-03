@@ -1,13 +1,26 @@
 import type { WorkspaceConfiguration } from 'vscode';
 
+export const DEFAULT_HOST_PROCESS_NAMES = [
+  'Code',
+  'Code - Insiders',
+  'VSCodium',
+  'Cursor',
+  'Cursor Helper',
+  'Windsurf',
+  'code-oss'
+] as const;
+
 export interface BridgeConfig {
   eventDebounce: number;
+  idleScanInterval: number;
   onlyWhenCodexVisible: boolean;
   approachLabels: string[];
   approvalLabels: string[];
   highConfidenceLabels: string[];
   codexMarkers: string[];
+  hostProcessNames: string[];
   cooldown: number;
+  parentPid: number;
 }
 
 function cleanLabels(value: readonly string[], fallback: readonly string[]): string[] {
@@ -15,9 +28,13 @@ function cleanLabels(value: readonly string[], fallback: readonly string[]): str
   return labels.length > 0 ? [...new Set(labels)] : [...fallback];
 }
 
-export function readBridgeConfig(config: WorkspaceConfiguration): BridgeConfig {
+export function readBridgeConfig(
+  config: WorkspaceConfiguration,
+  parentPid: number = process.pid
+): BridgeConfig {
   return {
     eventDebounce: Math.max(0, Math.min(200, config.get<number>('eventDebounce', 10))),
+    idleScanInterval: Math.max(250, Math.min(5000, config.get<number>('idleScanInterval', 1000))),
     onlyWhenCodexVisible: config.get<boolean>('onlyWhenCodexVisible', true),
     approachLabels: cleanLabels(config.get<string[]>('approachLabels', []), [
       'User approach',
@@ -68,6 +85,11 @@ export function readBridgeConfig(config: WorkspaceConfiguration): BridgeConfig {
       '使用这个方案'
     ],
     codexMarkers: cleanLabels(config.get<string[]>('codexMarkers', []), ['Codex', 'OpenAI Codex']),
-    cooldown: Math.max(250, Math.min(30000, config.get<number>('cooldown', 1500)))
+    hostProcessNames: cleanLabels(
+      config.get<string[]>('hostProcessNames', []),
+      DEFAULT_HOST_PROCESS_NAMES
+    ),
+    cooldown: Math.max(250, Math.min(30000, config.get<number>('cooldown', 1500))),
+    parentPid
   };
 }

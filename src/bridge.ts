@@ -1,8 +1,11 @@
-import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import type { ExtensionContext, OutputChannel } from 'vscode';
 import type { BridgeConfig } from './config';
+
+const execFileAsync = promisify(execFile);
 
 export type BridgeState = 'stopped' | 'starting' | 'running' | 'failed' | 'unsupported';
 
@@ -17,6 +20,7 @@ export class ApprovalBridge {
   private child: ChildProcessWithoutNullStreams | undefined;
   private stopping = false;
   private stdoutBuffer = '';
+  private runId = 0;
 
   constructor(
     private readonly context: ExtensionContext,
@@ -25,10 +29,25 @@ export class ApprovalBridge {
   ) {}
 
   start(config: BridgeConfig): void {
-    this.stop();
+    void this.startAsync(config);
+  }
+
+  stop(): void {
+    void this.stopAsync();
+  }
+
+  dispose(): void {
+    void this.stopAsync();
+  }
+
+  private async startAsync(config: BridgeConfig): Promise<void> {
+    const runId = ++this.runId;
+    this.stopping = false;
+    await this.terminateCurrentChild();
+    if (runId !== this.runId || this.stopping) return;
 
     if (process.platform !== 'win32') {
-      this.output.appendLine('[bridge] Windows is required for v0.1.');
+      this.output.appendLine('[bridge] Windows is required for this release.');
       this.onState('unsupported');
       return;
     }
@@ -40,15 +59,29 @@ export class ApprovalBridge {
       return;
     }
 
-    this.stopping = false;
     this.stdoutBuffer = '';
     this.onState('starting');
+
+    const storageRoot = this.context.globalStorageUri.fsPath;
+    mkdirSync(storageRoot, { recursive: true });
+    const assemblyPath = join(storageRoot, 'CodexUiSignal.dll');
+
     const payload = Buffer.from(JSON.stringify(config), 'utf8').toString('base64');
     const child = spawn(
       'powershell.exe',
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-ConfigBase64', payload],
-      { windowsHide: true }
+      {
+        windowsHide: true,
+        env: {
+          ...process.env,
+          CODEX_AUTO_APPROVE_ASSEMBLY: assemblyPath
+        }
+      }
     );
+    if (runId !== this.runId || this.stopping) {
+      await this.terminateProcess(child);
+      return;
+    }
     this.child = child;
 
     child.stdout.setEncoding('utf8');
@@ -58,17 +91,17 @@ export class ApprovalBridge {
       for (const line of chunk.split(/\r?\n/).filter(Boolean)) this.output.appendLine(`[bridge stderr] ${line}`);
     });
     child.once('spawn', () => {
-      if (this.child === child) this.onState('running');
+      if (this.child === child && runId === this.runId) this.onState('running');
     });
     child.once('error', (error) => {
-      if (this.child !== child) return;
+      if (this.child !== child || runId !== this.runId) return;
       this.output.appendLine(`[bridge] Could not start: ${error.message}`);
       this.onState('failed');
     });
     child.once('exit', (code, signal) => {
       if (this.child !== child) return;
       this.child = undefined;
-      if (this.stopping) {
+      if (this.stopping || runId !== this.runId) {
         this.onState('stopped');
         return;
       }
@@ -77,16 +110,53 @@ export class ApprovalBridge {
     });
   }
 
-  stop(): void {
+  private async stopAsync(): Promise<void> {
+    this.runId += 1;
     this.stopping = true;
-    const child = this.child;
-    this.child = undefined;
-    if (child && !child.killed) child.kill();
+    await this.terminateCurrentChild();
     this.onState('stopped');
   }
 
-  dispose(): void {
-    this.stop();
+  private async terminateCurrentChild(): Promise<void> {
+    const child = this.child;
+    this.child = undefined;
+    if (!child) return;
+    await this.terminateProcess(child);
+  }
+
+  private async terminateProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+    if (!child.pid) {
+      if (!child.killed) child.kill();
+      return;
+    }
+
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null) {
+        resolve();
+        return;
+      }
+      child.once('exit', () => resolve());
+    });
+
+    try {
+      await execFileAsync('taskkill', ['/PID', String(child.pid), '/T'], { windowsHide: true });
+    } catch {
+      // Process may already be gone.
+    }
+
+    const finishedGracefully = await Promise.race([
+      exited.then(() => true),
+      sleep(2000).then(() => false)
+    ]);
+    if (finishedGracefully) return;
+
+    try {
+      await execFileAsync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
+    } catch {
+      if (!child.killed) child.kill();
+    }
+
+    await Promise.race([exited, sleep(1000)]);
   }
 
   private consumeStdout(chunk: string): void {
@@ -114,4 +184,8 @@ export class ApprovalBridge {
       this.output.appendLine(`[bridge] ${line}`);
     }
   }
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

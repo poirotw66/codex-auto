@@ -19,8 +19,8 @@ export function activate(context: vscode.ExtensionContext): void {
       stopped: ['$(circle-slash) Auto Approve: OFF', 'Click to enable Codex Auto Approve'],
       starting: ['$(sync~spin) Auto Approve', 'Starting the Windows automation bridge…'],
       running: ['$(flame) Auto Approve: ON', 'Matching Codex prompts are approved automatically. Click to disable.'],
-      failed: ['$(error) Auto Approve', 'The bridge failed and will retry. Click to disable.'],
-      unsupported: ['$(warning) Auto Approve', 'Codex Auto Approve v0.1 supports Windows only.']
+      failed: ['$(error) Auto Approve', 'The bridge failed. Automatic restart is disabled; check the log, then toggle to retry.'],
+      unsupported: ['$(warning) Auto Approve', 'Codex Auto Approve supports Windows only.']
     };
     const [text, tooltip] = labels[next];
     status.text = text;
