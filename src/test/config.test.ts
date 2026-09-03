@@ -43,9 +43,14 @@ test('normalizes bridge configuration with both providers', () => {
   assert.ok(copilot);
   assert.deepEqual(copilot.approachLabels, []);
   assert.ok(copilot.approvalLabels.includes('Allow in this session'));
+  assert.ok(copilot.approvalLabels.includes('Allow Once'));
+  assert.ok(copilot.approvalLabels.includes('允許一次'));
   assert.ok(copilot.approvalLabels.includes('Run command'));
   assert.ok(copilot.approvalLabels.includes('繼續'));
+  assert.ok(copilot.highConfidenceLabels.includes('Allow Once'));
   assert.ok(copilot.markers.includes('GitHub Copilot'));
+  assert.ok(copilot.markers.includes('browser state'));
+  assert.ok(copilot.markers.includes('Cursor'));
   assert.equal(formatActiveProviders(result.providers), 'Codex+Copilot');
 });
 

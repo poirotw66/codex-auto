@@ -83,22 +83,39 @@ const DEFAULT_CODEX_HIGH_CONFIDENCE_LABELS = [
 
 const DEFAULT_COPILOT_APPROVAL_LABELS = [
   'Allow',
+  'Allow once',
+  'Allow Once',
+  'Allow always',
+  'Allow Always',
+  'Always allow',
+  'Always Allow',
   'Allow in this session',
   'Continue',
   'Confirm',
   'Accept',
   'Approve',
+  'Yes',
+  'Proceed',
   '允許',
+  '允許一次',
+  '一律允許',
+  '總是允許',
+  '永遠允許',
   '允許在此工作階段',
   '允許在此工作階段中',
   '繼續',
   '確認',
   '接受',
   '核准',
+  '是',
+  '继续',
   '允许',
+  '允许一次',
+  '一律允许',
+  '总是允许',
+  '永远允许',
   '允许在此会话',
   '允许在此会话中',
-  '继续',
   '确认',
   '接受',
   '批准'
@@ -108,29 +125,61 @@ const DEFAULT_COPILOT_TERMINAL_LABELS = [
   'Run',
   'Run command',
   'Run in terminal',
+  'Run everything',
   '執行',
   '執行命令',
   '在終端機中執行',
+  '全部執行',
   '运行',
   '运行命令',
-  '在终端中运行'
+  '在终端中运行',
+  '全部运行'
 ] as const;
 
 const DEFAULT_COPILOT_HIGH_CONFIDENCE_LABELS = [
+  'Allow once',
+  'Allow Once',
+  'Allow always',
+  'Allow Always',
+  'Always allow',
+  'Always Allow',
   'Allow in this session',
   'Continue',
   'Run command',
   'Run in terminal',
+  'Run everything',
+  '允許一次',
+  '一律允許',
+  '總是允許',
+  '永遠允許',
   '允許在此工作階段',
   '允許在此工作階段中',
   '繼續',
   '執行命令',
   '在終端機中執行',
+  '全部執行',
+  '允许一次',
+  '一律允许',
+  '总是允许',
+  '永远允许',
   '允许在此会话',
   '允许在此会话中',
   '继续',
   '运行命令',
-  '在终端中运行'
+  '在终端中运行',
+  '全部运行'
+] as const;
+
+const DEFAULT_COPILOT_MARKERS = [
+  'Copilot',
+  'GitHub Copilot',
+  'Copilot Chat',
+  'Cursor',
+  'browser state',
+  'Executes code',
+  'Default permissions',
+  'MCP',
+  'Computer Use'
 ] as const;
 
 function cleanLabels(value: readonly string[], fallback: readonly string[]): string[] {
@@ -179,11 +228,7 @@ export function readBridgeConfig(
       approachLabels: [],
       approvalLabels: mergeUnique(approvalLabels, terminalLabels),
       highConfidenceLabels: [...DEFAULT_COPILOT_HIGH_CONFIDENCE_LABELS],
-      markers: cleanLabels(config.get<string[]>('copilot.markers', []), [
-        'Copilot',
-        'GitHub Copilot',
-        'Copilot Chat'
-      ])
+      markers: cleanLabels(config.get<string[]>('copilot.markers', []), DEFAULT_COPILOT_MARKERS)
     });
   }
 

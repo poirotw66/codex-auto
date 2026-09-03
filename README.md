@@ -4,14 +4,16 @@
 
 Stop babysitting Codex and GitHub Copilot approvals.
 
-**Version 0.3.0** — a Windows-only VS Code extension that watches the local VS Code accessibility tree. When it finds a matching control inside a visible Codex or Copilot context, it approves the prompt (and for Codex, selects **User approach** first). It does not edit Codex/Copilot configuration, sandbox settings, or another extension's files.
+**Version 0.3.3** — a Windows-only VS Code extension that watches the local VS Code accessibility tree. When it finds a matching control inside a visible Codex or Copilot context, it approves the prompt (and for Codex, selects **User approach** first). It does not edit Codex/Copilot configuration, sandbox settings, or another extension's files.
+
+Prebuilt package in this repo: [`codex-auto-approve-0.3.3.vsix`](codex-auto-approve-0.3.3.vsix)
 
 > [!WARNING]
 > Auto-approval removes an important safety checkpoint. Only use it in repositories and tasks you trust. The extension starts **on** by default and shows a warning-colored status item while active. Click the status item at any time to turn it off or on.
 
 ## Install
 
-1. Build a VSIX (or use the packaged `codex-auto-approve-0.3.0.vsix` in this repo):
+1. Use the prebuilt VSIX above, or build one yourself:
 
 ```powershell
 npm install
@@ -21,7 +23,7 @@ npm run package
 2. Install into VS Code:
 
 ```powershell
-code --install-extension codex-auto-approve-0.3.0.vsix --force
+code --install-extension codex-auto-approve-0.3.3.vsix --force
 ```
 
 3. Open VS Code on Windows with OpenAI Codex and/or GitHub Copilot installed. Auto Approve starts on by default after startup.
@@ -71,9 +73,9 @@ This version does **not** automate macOS or Linux. On those platforms the status
 | `codexAutoApprove.approachLabels` | EN / 繁中 / 简中 | Codex: User approach labels |
 | `codexAutoApprove.approvalLabels` | EN / 繁中 / 简中 | Codex: approval button labels |
 | `codexAutoApprove.codexMarkers` | `Codex`, `OpenAI Codex` | Codex UI markers |
-| `codexAutoApprove.copilot.approvalLabels` | EN / 繁中 / 简中 | Copilot Chat/Agent approval labels |
-| `codexAutoApprove.copilot.terminalLabels` | EN / 繁中 / 简中 | Copilot terminal run labels |
-| `codexAutoApprove.copilot.markers` | `Copilot`, `GitHub Copilot`, `Copilot Chat` | Copilot UI markers |
+| `codexAutoApprove.copilot.approvalLabels` | EN / 繁中 / 简中 | Copilot/Cursor Chat, Agent, and permission approval labels (includes `Allow Once`) |
+| `codexAutoApprove.copilot.terminalLabels` | EN / 繁中 / 简中 | Copilot/Cursor terminal run labels |
+| `codexAutoApprove.copilot.markers` | `Copilot`, `Cursor`, `browser state`, … | Copilot/Cursor permission UI markers |
 | `codexAutoApprove.cooldown` | `1500` | Duplicate-action delay |
 
 Accessibility labels may change between Codex/Copilot releases or localized UI languages. Add the labels shown by your installed build to the arrays above. Do not disable provider context checks unless you accept the risk of matching unrelated VS Code controls.

@@ -2,7 +2,7 @@
   "name": "codex-auto-approve",
   "displayName": "Auto Approve (Codex & Copilot)",
   "description": "Automatically approves matching Codex and GitHub Copilot prompts in VS Code on Windows.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -188,27 +188,44 @@
           },
           "default": [
             "Allow",
+            "Allow once",
+            "Allow Once",
+            "Allow always",
+            "Allow Always",
+            "Always allow",
+            "Always Allow",
             "Allow in this session",
             "Continue",
             "Confirm",
             "Accept",
             "Approve",
+            "Yes",
+            "Proceed",
             "允許",
+            "允許一次",
+            "一律允許",
+            "總是允許",
+            "永遠允許",
             "允許在此工作階段",
             "允許在此工作階段中",
             "繼續",
             "確認",
             "接受",
             "核准",
+            "是",
+            "继续",
             "允许",
+            "允许一次",
+            "一律允许",
+            "总是允许",
+            "永远允许",
             "允许在此会话",
             "允许在此会话中",
-            "继续",
             "确认",
             "接受",
             "批准"
           ],
-          "description": "Copilot: exact accessible labels for Chat/Agent tool approvals."
+          "description": "Copilot/Cursor: exact accessible labels for Chat/Agent and permission approvals."
         },
         "codexAutoApprove.copilot.terminalLabels": {
           "type": "array",
@@ -219,14 +236,17 @@
             "Run",
             "Run command",
             "Run in terminal",
+            "Run everything",
             "執行",
             "執行命令",
             "在終端機中執行",
+            "全部執行",
             "运行",
             "运行命令",
-            "在终端中运行"
+            "在终端中运行",
+            "全部运行"
           ],
-          "description": "Copilot: exact accessible labels for terminal command execution approvals. Merged with copilot.approvalLabels."
+          "description": "Copilot/Cursor: exact accessible labels for terminal command execution approvals. Merged with copilot.approvalLabels."
         },
         "codexAutoApprove.copilot.markers": {
           "type": "array",
@@ -236,9 +256,15 @@
           "default": [
             "Copilot",
             "GitHub Copilot",
-            "Copilot Chat"
+            "Copilot Chat",
+            "Cursor",
+            "browser state",
+            "Executes code",
+            "Default permissions",
+            "MCP",
+            "Computer Use"
           ],
-          "description": "Case-insensitive text fragments used to identify the Copilot UI context."
+          "description": "Case-insensitive text fragments used to identify Copilot/Cursor permission UI context."
         },
         "codexAutoApprove.cooldown": {
           "type": "number",

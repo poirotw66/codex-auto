@@ -4,14 +4,16 @@
 
 不用再一直手動點 Codex 與 GitHub Copilot 的核准提示。
 
-**版本 0.3.0** — 僅支援 Windows 的 VS Code 擴充功能。它會監看本機 VS Code 的輔助功能（accessibility）樹；當在可見的 Codex 或 Copilot 介面中找到相符控制項時會自動核准（Codex 會先選 **User approach／使用者方案**）。它不會修改 Codex／Copilot 設定、沙箱設定，或其他擴充功能的檔案。
+**版本 0.3.3** — 僅支援 Windows 的 VS Code 擴充功能。它會監看本機 VS Code 的輔助功能（accessibility）樹；當在可見的 Codex 或 Copilot 介面中找到相符控制項時會自動核准（Codex 會先選 **User approach／使用者方案**）。它不會修改 Codex／Copilot 設定、沙箱設定，或其他擴充功能的檔案。
+
+本專案已附預先打包檔：[`codex-auto-approve-0.3.3.vsix`](codex-auto-approve-0.3.3.vsix)
 
 > [!WARNING]
 > 自動核准會拿掉重要的安全檢查點。請只在你信任的儲存庫與任務上使用。擴充功能預設為**開啟**，啟用時狀態列會以警告色顯示。隨時可點狀態列項目開關。
 
 ## 安裝
 
-1. 建置 VSIX（或直接使用本專案中的 `codex-auto-approve-0.3.0.vsix`）：
+1. 直接使用上方的預建 VSIX，或自行建置：
 
 ```powershell
 npm install
@@ -21,7 +23,7 @@ npm run package
 2. 安裝到 VS Code：
 
 ```powershell
-code --install-extension codex-auto-approve-0.3.0.vsix --force
+code --install-extension codex-auto-approve-0.3.3.vsix --force
 ```
 
 3. 在 Windows 上開啟 VS Code，並安裝 OpenAI Codex 與／或 GitHub Copilot。啟動完成後，Auto Approve 預設會自動開啟。
@@ -71,9 +73,9 @@ code --install-extension codex-auto-approve-0.3.0.vsix --force
 | `codexAutoApprove.approachLabels` | 英／繁／簡 | Codex：User approach 標籤 |
 | `codexAutoApprove.approvalLabels` | 英／繁／簡 | Codex：核准按鈕標籤 |
 | `codexAutoApprove.codexMarkers` | `Codex`、`OpenAI Codex` | Codex UI 標記 |
-| `codexAutoApprove.copilot.approvalLabels` | 英／繁／簡 | Copilot Chat／Agent 核准標籤 |
-| `codexAutoApprove.copilot.terminalLabels` | 英／繁／簡 | Copilot 終端執行標籤 |
-| `codexAutoApprove.copilot.markers` | `Copilot`、`GitHub Copilot`、`Copilot Chat` | Copilot UI 標記 |
+| `codexAutoApprove.copilot.approvalLabels` | EN / 繁中 / 简中 | Copilot/Cursor Chat、Agent、權限核准標籤（含 `Allow Once`） |
+| `codexAutoApprove.copilot.terminalLabels` | EN / 繁中 / 简中 | Copilot/Cursor 終端執行標籤 |
+| `codexAutoApprove.copilot.markers` | `Copilot`、`Cursor`、`browser state`… | Copilot/Cursor 權限 UI 標記 |
 | `codexAutoApprove.cooldown` | `1500` | 同一元素再次觸發前的毫秒數 |
 
 輔助功能標籤可能隨 Codex／Copilot 版本或 UI 語言而變。請把你安裝版本實際顯示的標籤加進上述陣列。除非你願意承擔誤點到其他 VS Code 控制項的風險，否則不要關閉 provider 情境檢查。
