@@ -2,7 +2,7 @@
   "name": "codex-auto-approve",
   "displayName": "Auto Approve (Codex & Copilot)",
   "description": "Automatically approves matching Codex and GitHub Copilot prompts in VS Code on Windows.",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -107,44 +107,137 @@
         },
         "codexAutoApprove.hostProcessNames": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["Code", "Code - Insiders", "VSCodium", "Cursor", "Cursor Helper", "Windsurf", "code-oss"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Code",
+            "Code - Insiders",
+            "VSCodium",
+            "Cursor",
+            "Cursor Helper",
+            "Windsurf",
+            "code-oss"
+          ],
           "description": "Host process names whose windows may be scanned and whose accessibility events may wake the bridge."
         },
         "codexAutoApprove.approachLabels": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["User approach", "Use user approach", "使用者方案", "使用者方法", "使用者做法", "用户方案", "用户方法", "用户做法"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "User approach",
+            "Use user approach",
+            "使用者方案",
+            "使用者方法",
+            "使用者做法",
+            "用户方案",
+            "用户方法",
+            "用户做法"
+          ],
           "description": "Codex: exact accessible labels that select the preferred approach before approval."
         },
         "codexAutoApprove.approvalLabels": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["Allow once", "Allow", "Approve", "Agree", "Confirm", "Yes, proceed", "Use this approach", "允許一次", "允許", "核准", "同意", "確認", "是，繼續", "使用此方案", "使用這個方案", "允许一次", "允许", "批准", "同意", "确认", "是，继续", "使用此方案", "使用这个方案"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Allow once",
+            "Allow",
+            "Approve",
+            "Agree",
+            "Confirm",
+            "Yes, proceed",
+            "Use this approach",
+            "允許一次",
+            "允許",
+            "核准",
+            "同意",
+            "確認",
+            "是，繼續",
+            "使用此方案",
+            "使用這個方案",
+            "允许一次",
+            "允许",
+            "批准",
+            "同意",
+            "确认",
+            "是，继续",
+            "使用此方案",
+            "使用这个方案"
+          ],
           "description": "Codex: exact accessible button labels that may be invoked inside a Codex context."
         },
         "codexAutoApprove.codexMarkers": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["Codex", "OpenAI Codex"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Codex",
+            "OpenAI Codex"
+          ],
           "description": "Case-insensitive text fragments used to identify the Codex UI context."
         },
         "codexAutoApprove.copilot.approvalLabels": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["Allow", "Allow in this session", "Continue", "Confirm", "Accept", "Approve", "允許", "允許在此工作階段", "允許在此工作階段中", "繼續", "確認", "接受", "核准", "允许", "允许在此会话", "允许在此会话中", "继续", "确认", "接受", "批准"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Allow",
+            "Allow in this session",
+            "Continue",
+            "Confirm",
+            "Accept",
+            "Approve",
+            "允許",
+            "允許在此工作階段",
+            "允許在此工作階段中",
+            "繼續",
+            "確認",
+            "接受",
+            "核准",
+            "允许",
+            "允许在此会话",
+            "允许在此会话中",
+            "继续",
+            "确认",
+            "接受",
+            "批准"
+          ],
           "description": "Copilot: exact accessible labels for Chat/Agent tool approvals."
         },
         "codexAutoApprove.copilot.terminalLabels": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["Run", "Run command", "Run in terminal", "執行", "執行命令", "在終端機中執行", "运行", "运行命令", "在终端中运行"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Run",
+            "Run command",
+            "Run in terminal",
+            "執行",
+            "執行命令",
+            "在終端機中執行",
+            "运行",
+            "运行命令",
+            "在终端中运行"
+          ],
           "description": "Copilot: exact accessible labels for terminal command execution approvals. Merged with copilot.approvalLabels."
         },
         "codexAutoApprove.copilot.markers": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["Copilot", "GitHub Copilot", "Copilot Chat"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Copilot",
+            "GitHub Copilot",
+            "Copilot Chat"
+          ],
           "description": "Case-insensitive text fragments used to identify the Copilot UI context."
         },
         "codexAutoApprove.cooldown": {

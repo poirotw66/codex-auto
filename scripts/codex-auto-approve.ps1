@@ -362,8 +362,10 @@ $targetNameCondition = if ($nameConditions.Count -eq 1) {
 }
 $matchCondition = [Windows.Automation.AndCondition]::new(
     $targetNameCondition,
-    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsEnabledProperty, $true),
-    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsOffscreenProperty, $false)
+    [Windows.Automation.AndCondition]::new(
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsEnabledProperty, $true),
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsOffscreenProperty, $false)
+    )
 )
 
 $idleScanInterval = 1000
@@ -407,18 +409,21 @@ function Get-Identity([Windows.Automation.AutomationElement]$Element) {
 }
 
 function Test-ProviderContext([Windows.Automation.AutomationElement]$Element, [object]$Provider) {
+    if ($null -eq $Element -or $null -eq $Provider) { return $false }
     if (-not $Provider.RequireContext) { return $true }
 
     try {
         $candidateName = [string]$Element.Current.Name
-        if ($Provider.HighConfidence.Contains($candidateName)) { return $true }
+        if ($Provider.HighConfidence -and $Provider.HighConfidence.Contains($candidateName)) { return $true }
     } catch {}
 
     $cursor = $Element
     for ($depth = 0; $depth -lt 12 -and $null -ne $cursor; $depth++) {
         try {
-            $haystack = "$($cursor.Current.Name) $($cursor.Current.AutomationId) $($cursor.Current.ClassName)"
-            foreach ($marker in $Provider.Markers) {
+            $current = $cursor.Current
+            $haystack = "$($current.Name) $($current.AutomationId) $($current.ClassName)"
+            foreach ($marker in @($Provider.Markers)) {
+                if (-not $marker) { continue }
                 if ($haystack.IndexOf([string]$marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
             }
             $cursor = $treeWalker.GetParent($cursor)
@@ -429,7 +434,12 @@ function Test-ProviderContext([Windows.Automation.AutomationElement]$Element, [o
 }
 
 function Invoke-Control([Windows.Automation.AutomationElement]$Element, [string]$Kind, [string]$ProviderId) {
-    $originalLabel = [string]$Element.Current.Name
+    if ($null -eq $Element) { return $false }
+    try {
+        $originalLabel = [string]$Element.Current.Name
+    } catch {
+        return $false
+    }
     $target = $Element
     for ($depth = 0; $depth -lt 5 -and $null -ne $target; $depth++) {
         try {
@@ -451,34 +461,56 @@ function Invoke-Control([Windows.Automation.AutomationElement]$Element, [string]
             Write-Event @{ type = $Kind; label = $originalLabel; provider = $ProviderId }
             return $true
         } catch {
-            Write-ThrottledWarning "invoke:$ProviderId:$originalLabel" "Could not invoke '$originalLabel' ($ProviderId): $($_.Exception.Message)"
+            Write-ThrottledWarning "invoke:$($ProviderId):$($originalLabel)" "Could not invoke '$originalLabel' ($ProviderId): $($_.Exception.Message)"
             return $false
         }
     }
-    Write-ThrottledWarning "pattern:$ProviderId:$originalLabel" "Matched '$originalLabel' ($ProviderId), but neither it nor its nearby parents exposed a clickable UI Automation pattern."
+    Write-ThrottledWarning "pattern:$($ProviderId):$($originalLabel)" "Matched '$originalLabel' ($ProviderId), but neither it nor its nearby parents exposed a clickable UI Automation pattern."
     return $false
 }
 
 function Find-MatchingControls([Windows.Automation.AutomationElement]$Root) {
     $approach = [Collections.Generic.List[hashtable]]::new()
     $approval = [Collections.Generic.List[hashtable]]::new()
-    $all = $Root.FindAll([Windows.Automation.TreeScope]::Descendants, $matchCondition)
+    if ($null -eq $Root) {
+        return @{ approach = $approach; approval = $approval }
+    }
+
+    $all = $null
+    try {
+        $all = $Root.FindAll([Windows.Automation.TreeScope]::Descendants, $matchCondition)
+    } catch {
+        Write-ThrottledWarning 'findall' "FindAll failed: $($_.Exception.Message)"
+        return @{ approach = $approach; approval = $approval }
+    }
+    if ($null -eq $all -or $all.Count -eq 0) {
+        return @{ approach = $approach; approval = $approval }
+    }
+
     foreach ($item in $all) {
-        $name = [string]$item.Current.Name
-        if (-not $name) { continue }
-        foreach ($provider in $providerStates) {
-            if ($provider.Approach.Contains($name) -and $item.Current.ControlType -ne [Windows.Automation.ControlType]::Text) {
-                $approach.Add(@{ Element = $item; Provider = $provider })
+        if ($null -eq $item) { continue }
+        try {
+            $current = $item.Current
+            $name = [string]$current.Name
+            if (-not $name) { continue }
+            $controlType = $current.ControlType
+            foreach ($provider in $providerStates) {
+                if ($provider.Approach.Contains($name) -and $controlType -ne [Windows.Automation.ControlType]::Text) {
+                    $approach.Add(@{ Element = $item; Provider = $provider })
+                }
+                if ($provider.Approval.Contains($name)) {
+                    $approval.Add(@{ Element = $item; Provider = $provider })
+                }
             }
-            if ($provider.Approval.Contains($name)) {
-                $approval.Add(@{ Element = $item; Provider = $provider })
-            }
+        } catch {
+            continue
         }
     }
     return @{ approach = $approach; approval = $approval }
 }
 
 function Get-WindowProcessName([Windows.Automation.AutomationElement]$Window) {
+    if ($null -eq $Window) { return $null }
     $processId = 0
     try { $processId = [int]$Window.Current.ProcessId } catch { return $null }
     if ($processId -le 0) { return $null }
@@ -494,11 +526,20 @@ function Get-WindowProcessName([Windows.Automation.AutomationElement]$Window) {
 
 function Invoke-Scan {
     try {
-        $windows = $desktop.FindAll(
-            [Windows.Automation.TreeScope]::Children,
-            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
-        )
+        $windows = $null
+        try {
+            $windows = $desktop.FindAll(
+                [Windows.Automation.TreeScope]::Children,
+                [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
+            )
+        } catch {
+            Write-ThrottledWarning 'windows' "Window FindAll failed: $($_.Exception.Message)"
+            return
+        }
+        if ($null -eq $windows -or $windows.Count -eq 0) { return }
+
         foreach ($window in $windows) {
+            if ($null -eq $window) { continue }
             $processName = Get-WindowProcessName $window
             if (-not $processName -or -not $hostProcessNames.Contains($processName)) { continue }
 
@@ -506,19 +547,31 @@ function Invoke-Scan {
             foreach ($match in $controls.approach) {
                 $control = $match.Element
                 $provider = $match.Provider
-                if (Test-ProviderContext $control $provider) {
-                    if (Invoke-Control $control 'selected' $provider.Id) { break }
-                } else {
-                    Write-ThrottledWarning "context:$($provider.Id):$($control.Current.Name)" "Matched '$($control.Current.Name)' for $($provider.Id), but rejected it because no nearby provider context was exposed."
+                if ($null -eq $control -or $null -eq $provider) { continue }
+                try {
+                    if (Test-ProviderContext $control $provider) {
+                        if (Invoke-Control $control 'selected' $provider.Id) { break }
+                    } else {
+                        $label = [string]$control.Current.Name
+                        Write-ThrottledWarning "context:$($provider.Id):$label" "Matched '$label' for $($provider.Id), but rejected it because no nearby provider context was exposed."
+                    }
+                } catch {
+                    Write-ThrottledWarning "approach:$($provider.Id)" "Approach handling failed for $($provider.Id): $($_.Exception.Message)"
                 }
             }
             foreach ($match in $controls.approval) {
                 $control = $match.Element
                 $provider = $match.Provider
-                if (Test-ProviderContext $control $provider) {
-                    if (Invoke-Control $control 'approved' $provider.Id) { break }
-                } else {
-                    Write-ThrottledWarning "context:$($provider.Id):$($control.Current.Name)" "Matched '$($control.Current.Name)' for $($provider.Id), but rejected it because no nearby provider context was exposed."
+                if ($null -eq $control -or $null -eq $provider) { continue }
+                try {
+                    if (Test-ProviderContext $control $provider) {
+                        if (Invoke-Control $control 'approved' $provider.Id) { break }
+                    } else {
+                        $label = [string]$control.Current.Name
+                        Write-ThrottledWarning "context:$($provider.Id):$label" "Matched '$label' for $($provider.Id), but rejected it because no nearby provider context was exposed."
+                    }
+                } catch {
+                    Write-ThrottledWarning "approval:$($provider.Id)" "Approval handling failed for $($provider.Id): $($_.Exception.Message)"
                 }
             }
         }
@@ -535,7 +588,7 @@ function Invoke-Scan {
             }
         }
     } catch {
-        Write-Event @{ type = 'warning'; message = $_.Exception.Message }
+        Write-ThrottledWarning 'scan' $_.Exception.Message
     }
 }
 
